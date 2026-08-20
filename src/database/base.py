@@ -24,6 +24,15 @@ def get_engine() -> Engine:
         raise RuntimeError(
             "DATABASE_URL is not set. Copy .env.example to .env and fill it in."
         )
+    # Neon (and most providers) hand out a plain postgresql:// URL, which
+    # SQLAlchemy defaults to the psycopg2 driver. This project depends on
+    # psycopg3 (psycopg[binary]) instead, so rewrite the scheme to be
+    # explicit rather than failing on the first connection with
+    # "ModuleNotFoundError: No module named 'psycopg2'".
+    if database_url.startswith("postgresql://"):
+        database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+    elif database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql+psycopg://", 1)
     return create_engine(database_url, pool_pre_ping=True, future=True)
 
 
