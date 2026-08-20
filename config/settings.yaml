@@ -1,0 +1,53 @@
+# FINZORA FX — core settings
+# Owner configuration, per Phase 0 report. Values here are defaults and must
+# remain configurable — never hardcode these into application logic.
+
+project_name: FINZORA FX
+
+base_currency: SGD
+
+paper_account:
+  starting_capital: 10000
+
+trading:
+  style: DYNAMIC
+  allowed_styles:
+    - SWING
+    - POSITION
+
+research:
+  minimum_historical_years: 5
+  preferred_historical_years: 10
+
+target:
+  annual_return_minimum: 0.12
+  annual_return_preferred: 0.15
+
+deployment:
+  initial_mode: PAPER
+  live_trading_enabled: false
+
+location:
+  country: Singapore
+  timezone: Asia/Singapore
+
+notification:
+  platform: Telegram
+  channel_name: Finzora
+
+llm:
+  primary:
+    provider: Anthropic
+    purpose:
+      - coding
+      - architecture
+      - research
+      - orchestration
+  secondary:
+    model_family: NVIDIA Nemotron 3
+    purpose:
+      - independent analysis
+      - news analysis
+      - geopolitical analysis
+      - cross-checking
+      - research sub-agent

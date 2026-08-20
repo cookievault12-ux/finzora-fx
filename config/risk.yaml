@@ -1,0 +1,31 @@
+# FINZORA FX — risk configuration
+# IMPORTANT: "30% of chosen investment capital" refers to the eventual live
+# capital allocation ceiling (see deployment notes), NEVER per-trade risk.
+# The system must never risk 30% of the portfolio on a single trade.
+
+risk:
+  risk_per_trade:
+    default: 0.005
+    maximum: 0.0075
+
+  maximum_total_open_risk: 0.02
+
+  maximum_portfolio_drawdown: 0.30
+
+  soft_drawdown_limit: 0.15
+  emergency_drawdown_limit: 0.25
+
+  drawdown_schedule:
+    - threshold: 0.15
+      action: CAUTION
+    - threshold: 0.20
+      action: REDUCE_RISK
+    - threshold: 0.25
+      action: RESTRICT_TRADING
+    - threshold: 0.30
+      action: HALT
+
+# Live capital allocation ceiling, applied only once live trading is
+# manually authorized — never automatic.
+live_capital:
+  max_allocation_pct_of_chosen_investment: 0.30

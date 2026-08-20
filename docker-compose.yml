@@ -1,0 +1,26 @@
+# FINZORA FX — local development only.
+# Production database is Neon (managed Postgres); this local Postgres is for
+# offline dev/testing so schema work doesn't touch the real Neon project.
+# Redis is optional, used for caching/rate-limit bookkeeping once needed.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: finzora
+      POSTGRES_PASSWORD: finzora_dev_only
+      POSTGRES_DB: finzora_fx_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - finzora_pg_data:/var/lib/postgresql/data
+    profiles: ["local-db"]
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    profiles: ["cache"]
+
+volumes:
+  finzora_pg_data:

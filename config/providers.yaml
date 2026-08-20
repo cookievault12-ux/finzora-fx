@@ -1,0 +1,31 @@
+# FINZORA FX — provider configuration
+# Swappable by design: providers/brokers must never be hardcoded into
+# application logic (see MarketDataProvider / BrokerAdapter interfaces).
+
+data_providers:
+  primary: FMP
+  backup: ALPHA_VANTAGE
+  supplementary: null   # Twelve Data deferred per minimum-cost plan (Phase 0, section 4/8)
+  macro_calendar: FMP
+  macro_supplement: FRED
+  geopolitical_search: EXA
+  geopolitical_structured: GDELT
+  historical_backfill_seed: DUKASCOPY   # one-time free seed only
+
+execution:
+  primary: OANDA
+  primary_environment: practice
+  alternate: SAXO
+  alternate_environment: simulation
+  live_upgrade_path: INTERACTIVE_BROKERS   # not yet configured; live only, later
+
+database:
+  provider: NEON
+  engine: postgresql
+
+hosting:
+  provider: RAILWAY
+
+llm:
+  primary: ANTHROPIC
+  secondary: NEMOTRON3

@@ -1,0 +1,43 @@
+# FINZORA FX — instrument universe
+# Additional instruments are added here, never hardcoded into application logic.
+
+fx_pairs:
+  majors:
+    - EUR/USD
+    - GBP/USD
+    - USD/JPY
+    - USD/CHF
+    - AUD/USD
+    - NZD/USD
+    - USD/CAD
+    - USD/SGD
+  crosses:
+    - EUR/GBP
+    - EUR/JPY
+    - GBP/JPY
+    - AUD/JPY
+    - NZD/JPY
+    - EUR/CHF
+    - GBP/CHF
+    - AUD/NZD
+    - EUR/AUD
+    - GBP/AUD
+    - EUR/CAD
+    - GBP/CAD
+
+# Monitored for explanatory/cross-asset context only — not traded in Phase 1.
+cross_asset_monitor:
+  - GOLD
+  - SILVER
+  - OIL_WTI
+  - OIL_BRENT
+  - DXY
+  - SP500
+  - NASDAQ
+  - VIX
+  - US_TREASURY_YIELDS
+  - DE_BUND_YIELDS
+  - UK_GILT_YIELDS
+  - JP_JGB_YIELDS
+  - AU_BOND_YIELDS
+  - CA_BOND_YIELDS

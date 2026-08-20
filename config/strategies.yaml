@@ -1,0 +1,12 @@
+# FINZORA FX — strategy registry
+# Populated in Phase 4 (Signal Engine & Backtesting). Empty scaffold for now —
+# no strategy is assumed to work universally; each is validated independently.
+
+strategies: []
+
+# Example future shape (not active):
+# strategies:
+#   - name: trend_following_v0
+#     status: RESEARCH
+#     applicable_regimes: [TRENDING]
+#     parameters: {}
