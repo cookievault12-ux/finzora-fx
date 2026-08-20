@@ -1,0 +1,28 @@
+# Railpack's default Python detection installs from this file directly,
+# which stages correctly into the runtime container. Our earlier custom
+# buildCommand override ("pip install -e '.[dev]'") installed successfully
+# but into a layer that gets snapshotted before pip runs — Procfile/start
+# command worked, but pytest (and by the same mechanism, likely every
+# other dependency) never reached the runtime container. Switching to a
+# plain requirements.txt uses Railpack's well-tested default path instead
+# of fighting its layer staging with a custom override.
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+pydantic-settings>=2.2
+sqlalchemy>=2.0
+psycopg[binary]>=3.1
+alembic>=1.13
+pandas>=2.2
+numpy>=1.26
+scipy>=1.12
+scikit-learn>=1.4
+statsmodels>=0.14
+httpx>=0.27
+anthropic>=0.25
+pyyaml>=6.0
+tenacity>=8.2
+apscheduler>=3.10
+pytest>=8.0
+pytest-asyncio>=0.23
+pytest-cov>=5.0
