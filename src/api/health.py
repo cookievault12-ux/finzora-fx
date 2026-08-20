@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from sqlalchemy import text
 
 from src.database.base import get_engine
@@ -86,3 +86,26 @@ def health() -> dict:
     else:
         overall = "ok"
     return {"status": overall, "checks": checks}
+
+
+@app.get("/internal/telegram-test")
+def telegram_test(token: str) -> dict:
+    """One-off manual smoke test: sends a real message to the configured
+    Telegram chat so deployment can be confirmed end-to-end from a browser.
+    Gated by INTERNAL_ADMIN_TOKEN (set on Railway, never committed) so this
+    can't be triggered by anyone who just guesses the URL path."""
+    expected = os.environ.get("INTERNAL_ADMIN_TOKEN")
+    if not expected or token != expected:
+        raise HTTPException(status_code=403, detail="forbidden")
+    try:
+        client = TelegramClient()
+        result = client.send_message(
+            "✅ FINZORA FX — hello from Railway.\n\n"
+            "Deployment is live: database, OANDA market data, and this bot "
+            "are all connected. This message confirms Telegram delivery "
+            "end-to-end."
+        )
+        client.close()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"sent": True, "telegram_response": result}
