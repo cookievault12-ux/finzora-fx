@@ -40,4 +40,11 @@ class DataQualityEvent(Base):
     ts: Mapped[dt.datetime] = mapped_column(nullable=False)
     details: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     resulted_in_no_trade: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    created_at: Mapped[dt.datetime] = mapped_column(nullable=False)
+    # Python-side default (not just the DB's DEFAULT now()) — SQLAlchemy's
+    # ORM sends this column explicitly as NULL on INSERT when the attribute
+    # is unset and there's no default= here, which violates the NOT NULL
+    # constraint rather than falling back to the server default. Same fix
+    # applied across every created_at column in src/database/models/.
+    created_at: Mapped[dt.datetime] = mapped_column(
+        nullable=False, default=lambda: dt.datetime.now(dt.timezone.utc)
+    )

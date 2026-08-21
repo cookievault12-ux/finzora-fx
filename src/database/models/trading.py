@@ -50,7 +50,9 @@ class PaperTrade(Base):
     commission: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
     slippage: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
     financing_cost: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
-    created_at: Mapped[dt.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        nullable=False, default=lambda: dt.datetime.now(dt.timezone.utc)
+    )
 
 
 class Position(Base):
@@ -81,7 +83,9 @@ class PortfolioSnapshot(Base):
     drawdown_pct: Mapped[Decimal] = mapped_column(Numeric(6, 4), nullable=False, default=0)
     currency_exposure: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     open_positions_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    created_at: Mapped[dt.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        nullable=False, default=lambda: dt.datetime.now(dt.timezone.utc)
+    )
 
 
 class PerformanceMetric(Base):
@@ -107,7 +111,9 @@ class PerformanceMetric(Base):
     transaction_costs: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))
     best_month: Mapped[Decimal | None] = mapped_column(Numeric(8, 4))
     worst_month: Mapped[Decimal | None] = mapped_column(Numeric(8, 4))
-    created_at: Mapped[dt.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        nullable=False, default=lambda: dt.datetime.now(dt.timezone.utc)
+    )
 
 
 class RiskEvent(Base):
@@ -119,4 +125,6 @@ class RiskEvent(Base):
     ts: Mapped[dt.datetime] = mapped_column(nullable=False)
     details: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     portfolio_snapshot_id: Mapped[int | None] = mapped_column(ForeignKey("portfolio_snapshots.id"))
-    created_at: Mapped[dt.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        nullable=False, default=lambda: dt.datetime.now(dt.timezone.utc)
+    )

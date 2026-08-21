@@ -27,7 +27,9 @@ class MacroEvent(Base):
     surprise: Mapped[Decimal | None] = mapped_column(Numeric(24, 8))
     importance: Mapped[str | None] = mapped_column(String)
     source: Mapped[str] = mapped_column(String, nullable=False)
-    created_at: Mapped[dt.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        nullable=False, default=lambda: dt.datetime.now(dt.timezone.utc)
+    )
 
 
 class CentralBankEvent(Base):
@@ -42,7 +44,9 @@ class CentralBankEvent(Base):
     stance_score: Mapped[Decimal | None] = mapped_column(Numeric(5, 4))  # CentralBankStanceScore, -1..+1
     forward_guidance_summary: Mapped[str | None] = mapped_column(Text)
     source: Mapped[str] = mapped_column(String, nullable=False)
-    created_at: Mapped[dt.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        nullable=False, default=lambda: dt.datetime.now(dt.timezone.utc)
+    )
 
 
 class YieldData(Base):
@@ -58,7 +62,9 @@ class YieldData(Base):
     ts: Mapped[dt.datetime] = mapped_column(nullable=False)
     yield_value: Mapped[Decimal] = mapped_column(Numeric(8, 4), nullable=False)
     source: Mapped[str] = mapped_column(String, nullable=False)
-    created_at: Mapped[dt.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        nullable=False, default=lambda: dt.datetime.now(dt.timezone.utc)
+    )
 
 
 class NewsArticle(Base):
@@ -95,4 +101,6 @@ class GeopoliticalEvent(Base):
     source_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     source_quality: Mapped[Decimal | None] = mapped_column(Numeric(5, 4))
     ts: Mapped[dt.datetime] = mapped_column(nullable=False)
-    created_at: Mapped[dt.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        nullable=False, default=lambda: dt.datetime.now(dt.timezone.utc)
+    )

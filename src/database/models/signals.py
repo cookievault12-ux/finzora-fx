@@ -63,7 +63,9 @@ class Signal(Base):
     final_decision: Mapped[str] = mapped_column(String, nullable=False)  # LONG/SHORT/NO_TRADE
     reason: Mapped[str | None] = mapped_column(Text)
     llm_analysis: Mapped[dict | None] = mapped_column(JSONB)  # audit trail only — no secrets
-    created_at: Mapped[dt.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        nullable=False, default=lambda: dt.datetime.now(dt.timezone.utc)
+    )
 
 
 class SignalFeature(Base):
@@ -74,4 +76,6 @@ class SignalFeature(Base):
     signal_id: Mapped[int] = mapped_column(ForeignKey("signals.id"), nullable=False)
     feature_name: Mapped[str] = mapped_column(String, nullable=False)
     feature_value: Mapped[Decimal | None] = mapped_column(Numeric(24, 10))
-    created_at: Mapped[dt.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        nullable=False, default=lambda: dt.datetime.now(dt.timezone.utc)
+    )

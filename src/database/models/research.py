@@ -41,7 +41,9 @@ class BacktestRun(Base):
     costs: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))
     best_trade: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))
     worst_trade: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))
-    created_at: Mapped[dt.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        nullable=False, default=lambda: dt.datetime.now(dt.timezone.utc)
+    )
 
 
 class WalkForwardRun(Base):
@@ -55,7 +57,9 @@ class WalkForwardRun(Base):
     test_start: Mapped[dt.datetime] = mapped_column(nullable=False)
     test_end: Mapped[dt.datetime] = mapped_column(nullable=False)
     backtest_run_id: Mapped[int | None] = mapped_column(ForeignKey("backtest_runs.id"))
-    created_at: Mapped[dt.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        nullable=False, default=lambda: dt.datetime.now(dt.timezone.utc)
+    )
 
 
 class MonteCarloRun(Base):
@@ -74,4 +78,6 @@ class MonteCarloRun(Base):
     probability_drawdown_gt_20: Mapped[Decimal | None] = mapped_column(Numeric(6, 4))
     probability_drawdown_gt_30: Mapped[Decimal | None] = mapped_column(Numeric(6, 4))
     return_distribution: Mapped[dict | None] = mapped_column(JSONB)
-    created_at: Mapped[dt.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        nullable=False, default=lambda: dt.datetime.now(dt.timezone.utc)
+    )

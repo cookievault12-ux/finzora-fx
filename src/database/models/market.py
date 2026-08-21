@@ -35,7 +35,9 @@ class CurrencyPair(Base):
     quote_currency: Mapped[str] = mapped_column(String, nullable=False)
     category: Mapped[str] = mapped_column(String, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    created_at: Mapped[dt.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        nullable=False, default=lambda: dt.datetime.now(dt.timezone.utc)
+    )
 
 
 class Instrument(Base):
@@ -54,7 +56,9 @@ class Instrument(Base):
     is_tradeable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     provider_instrument_ids: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     currency_pair_id: Mapped[int | None] = mapped_column(ForeignKey("currency_pairs.id"))
-    created_at: Mapped[dt.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        nullable=False, default=lambda: dt.datetime.now(dt.timezone.utc)
+    )
 
 
 class PriceData(Base):
@@ -107,7 +111,9 @@ class MarketFeatures(Base):
     ts: Mapped[dt.datetime] = mapped_column(nullable=False)
     feature_set_version: Mapped[str] = mapped_column(String, nullable=False)
     features: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    created_at: Mapped[dt.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        nullable=False, default=lambda: dt.datetime.now(dt.timezone.utc)
+    )
 
 
 class CrossAssetData(Base):
@@ -134,4 +140,6 @@ class MarketRegime(Base):
     regime_labels: Mapped[list] = mapped_column(JSONB, nullable=False)
     confidence: Mapped[Decimal | None] = mapped_column(Numeric(5, 4))
     methodology_version: Mapped[str] = mapped_column(String, nullable=False)
-    created_at: Mapped[dt.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        nullable=False, default=lambda: dt.datetime.now(dt.timezone.utc)
+    )

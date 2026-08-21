@@ -23,7 +23,9 @@ class Strategy(Base):
     family: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False, default="RESEARCH")
     description: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[dt.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        nullable=False, default=lambda: dt.datetime.now(dt.timezone.utc)
+    )
     updated_at: Mapped[dt.datetime] = mapped_column(nullable=False)
 
 
@@ -35,7 +37,9 @@ class StrategyParameter(Base):
     param_name: Mapped[str] = mapped_column(String, nullable=False)
     param_value: Mapped[dict] = mapped_column(JSONB, nullable=False)
     version: Mapped[str] = mapped_column(String, nullable=False)
-    created_at: Mapped[dt.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        nullable=False, default=lambda: dt.datetime.now(dt.timezone.utc)
+    )
 
 
 class StrategyVersion(Base):
@@ -46,7 +50,9 @@ class StrategyVersion(Base):
     strategy_id: Mapped[int] = mapped_column(ForeignKey("strategies.id"), nullable=False)
     version_label: Mapped[str] = mapped_column(String, nullable=False)  # e.g. 'FINZORA-v0.1'
     parameters_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    created_at: Mapped[dt.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        nullable=False, default=lambda: dt.datetime.now(dt.timezone.utc)
+    )
 
 
 class ModelVersion(Base):
@@ -57,4 +63,6 @@ class ModelVersion(Base):
     model_name: Mapped[str] = mapped_column(String, nullable=False)
     component: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[dt.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        nullable=False, default=lambda: dt.datetime.now(dt.timezone.utc)
+    )
