@@ -109,3 +109,22 @@ def telegram_test(token: str) -> dict:
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {"sent": True, "telegram_response": result}
+
+
+@app.get("/internal/telegram-updates")
+def telegram_updates(token: str) -> dict:
+    """Diagnostic: raw getUpdates response, so the real chat_id for whoever
+    just messaged the bot can be read off directly and compared against the
+    configured TELEGRAM_CHAT_ID. Same admin-token gate as the other
+    /internal endpoint."""
+    expected = os.environ.get("INTERNAL_ADMIN_TOKEN")
+    if not expected or token != expected:
+        raise HTTPException(status_code=403, detail="forbidden")
+    try:
+        client = TelegramClient()
+        result = client.get_updates()
+        client.close()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    configured_chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    return {"configured_TELEGRAM_CHAT_ID": configured_chat_id, "telegram_response": result}
