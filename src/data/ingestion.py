@@ -101,6 +101,15 @@ def _persist_issues(session: Session, instrument_id: int, issues: list[QualityIs
         )
 
 
+#  PriceData has 12 columns, so a bulk INSERT of N rows binds ~12*N
+# parameters. Postgres (and psycopg) caps a single statement at 65535
+# bound parameters, so a 30-day M5 backfill (~8640 bars) in one INSERT
+# blows past that ("number of parameters must be between 0 and 65535").
+# Chunk conservatively — 1000 rows * 12 cols = 12000 params, well under
+# the ceiling with headroom for wider tables later.
+_UPSERT_CHUNK_SIZE = 1000
+
+
 def _upsert_bars(session: Session, instrument_id: int, bars: list[OHLCBar]) -> int:
     if not bars:
         return 0
@@ -121,18 +130,20 @@ def _upsert_bars(session: Session, instrument_id: int, bars: list[OHLCBar]) -> i
         }
         for bar in bars
     ]
-    stmt = pg_insert(PriceData).values(rows)
-    stmt = stmt.on_conflict_do_update(
-        index_elements=[PriceData.instrument_id, PriceData.timeframe, PriceData.ts, PriceData.provider],
-        set_={
-            "open": stmt.excluded.open,
-            "high": stmt.excluded.high,
-            "low": stmt.excluded.low,
-            "close": stmt.excluded.close,
-            "volume": stmt.excluded.volume,
-        },
-    )
-    session.execute(stmt)
+    for i in range(0, len(rows), _UPSERT_CHUNK_SIZE):
+        chunk = rows[i : i + _UPSERT_CHUNK_SIZE]
+        stmt = pg_insert(PriceData).values(chunk)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[PriceData.instrument_id, PriceData.timeframe, PriceData.ts, PriceData.provider],
+            set_={
+                "open": stmt.excluded.open,
+                "high": stmt.excluded.high,
+                "low": stmt.excluded.low,
+                "close": stmt.excluded.close,
+                "volume": stmt.excluded.volume,
+            },
+        )
+        session.execute(stmt)
     return len(rows)
 
 
