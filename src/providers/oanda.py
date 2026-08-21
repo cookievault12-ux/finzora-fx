@@ -106,12 +106,15 @@ class OandaProvider(MarketDataProvider):
         bars: list[OHLCBar] = []
         cursor = start
         while cursor < end:
+            # OANDA's v20 API rejects a request that supplies from + to + count
+            # together (400 Bad Request) — only two of the three are valid at
+            # once. Paginate with from + count instead, and let the end-time
+            # cutoff below (rather than a server-side "to") stop the loop.
             resp = self._client.get(
                 f"/v3/instruments/{symbol}/candles",
                 params={
                     "granularity": granularity,
                     "from": cursor.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "to": end.strftime("%Y-%m-%dT%H:%M:%SZ"),
                     "count": _MAX_CANDLES_PER_REQUEST,
                     "price": "M",  # midpoint OHLC; use bid/ask via get_bid_ask for spread
                 },
@@ -120,6 +123,7 @@ class OandaProvider(MarketDataProvider):
             candles = resp.json().get("candles", [])
             if not candles:
                 break
+            reached_end = False
             for c in candles:
                 if not c.get("complete", True):
                     continue
@@ -127,6 +131,12 @@ class OandaProvider(MarketDataProvider):
                 ts = dt.datetime.strptime(c["time"][:19], "%Y-%m-%dT%H:%M:%S").replace(
                     tzinfo=dt.timezone.utc
                 )
+                if ts > end:
+                    # We requested from + count with no server-side "to", so
+                    # OANDA may hand back candles past the caller's end —
+                    # trim them client-side and stop paginating further.
+                    reached_end = True
+                    break
                 bars.append(
                     OHLCBar(
                         instrument=instrument,
@@ -140,6 +150,8 @@ class OandaProvider(MarketDataProvider):
                         provider=self.name,
                     )
                 )
+            if reached_end:
+                break
             last_ts = dt.datetime.strptime(candles[-1]["time"][:19], "%Y-%m-%dT%H:%M:%S").replace(
                 tzinfo=dt.timezone.utc
             )
