@@ -1,16 +1,16 @@
-"""Scheduled jobs for data ingestion (spec section 79).
+"""Scheduled jobs for data ingestion + feature/regime computation (spec
+section 79, Phase 1 + Phase 2).
 
-Not run/tested in the build sandbox (APScheduler isn't installable here —
-no outbound package-index access; see project history). Structure and
-schedule follow the spec directly; smoke-test with
-`python -m src.monitoring.scheduler` once dependencies are installed and
-.env is filled in.
+Pipeline per cycle, per spec section 16 (Provider -> Ingestion ->
+Validation -> Normalization -> Postgres -> Feature Store): ingest bars for
+an instrument/timeframe, then immediately compute and store its Phase 2
+feature vector from whatever is now in price_data. On the H1 cycle only,
+also aggregate that cycle's features across the 8 major pairs into a
+market-wide regime classification (src/features/regime.py).
 
-Only market-data ingestion and a data-quality freshness sweep are wired
-here — macro/news/geopolitical ingestion, feature calculation, signal
-scan, and paper execution are later phases per PHASE0_REPORT.md's roadmap
-and aren't implemented yet, so scheduling them now would be scheduling
-jobs that don't exist.
+Macro/news/geopolitical ingestion, signal generation, and paper execution
+are later phases per PHASE0_REPORT.md's roadmap and aren't implemented yet,
+so scheduling them now would be scheduling jobs that don't exist.
 """
 
 from __future__ import annotations
@@ -28,6 +28,8 @@ from src.data.ingestion import ingest_instrument_timeframe
 from src.data.rate_limit import CircuitBreaker, TokenBucket
 from src.database.base import get_session_factory
 from src.database.models.system import SystemEvent
+from src.features.regime import classify_regime
+from src.features.store import compute_and_store_features, store_market_regime
 from src.market.types import Timeframe
 from src.monitoring.retention import check_storage_budget, purge_stale_quality_events
 from src.providers.base import MarketDataProvider
@@ -104,14 +106,71 @@ def _ingest_with_resilience(
         # before generating a signal for this instrument.
 
 
+def _featurize_with_resilience(session: Session, instrument: str, timeframe: Timeframe) -> dict | None:
+    """Runs feature computation right after ingestion for the same
+    instrument/timeframe (spec section 16: Provider -> Ingestion ->
+    Validation -> Normalization -> Postgres -> Feature Store, as one
+    pipeline). Recomputes from whatever is currently in price_data even if
+    this cycle's ingestion attempt failed — that just means the feature row
+    reflects the last successfully ingested bar, which is honest, not a
+    silent failure. Returns the feature dict for regime aggregation, or
+    None if it couldn't be computed (no price history yet, or an error)."""
+    try:
+        return compute_and_store_features(session, instrument, timeframe)
+    except Exception:
+        logger.exception("Feature computation failed for %s %s", instrument, timeframe.value)
+        session.rollback()
+        session.add(SystemEvent(
+            event_type="DATA_FAILURE", severity="ERROR", component="features",
+            message=f"Feature computation failed for {instrument} {timeframe.value}",
+            details={"instrument": instrument, "timeframe": timeframe.value},
+            ts=dt.datetime.now(dt.timezone.utc),
+        ))
+        session.commit()
+        return None
+
+
+def _run_regime_classification(session: Session, features_by_pair: dict[str, dict]) -> None:
+    """Aggregates this cycle's H1 features across the major pairs into a
+    single market-wide regime classification (spec: market_regimes is not
+    per-instrument). See src/features/regime.py for the (deliberately
+    simple, explainable) rule-based methodology."""
+    try:
+        labels, confidence = classify_regime(features_by_pair)
+        if not labels:
+            logger.info("Regime classification skipped this cycle — not enough feature history yet")
+            return
+        store_market_regime(session, dt.datetime.now(dt.timezone.utc), labels, confidence)
+        logger.info("Regime classified: %s (confidence=%s)", labels, confidence)
+    except Exception:
+        logger.exception("Regime classification failed")
+        session.rollback()
+        session.add(SystemEvent(
+            event_type="DATA_FAILURE", severity="ERROR", component="regime",
+            message="Regime classification cycle failed", details={},
+            ts=dt.datetime.now(dt.timezone.utc),
+        ))
+        session.commit()
+
+
 def run_ingestion_cycle(timeframe: Timeframe) -> None:
     session_factory = get_session_factory()
     provider = OandaProvider()
     pairs = _load_fx_pairs()
+    features_by_pair: dict[str, dict] = {}
     try:
         with session_factory() as session:
             for instrument in pairs:
                 _ingest_with_resilience(session, provider, instrument, timeframe)
+                features = _featurize_with_resilience(session, instrument, timeframe)
+                if features is not None:
+                    features_by_pair[instrument] = features
+
+            # Regime is classified off H1 only — a stable enough timeframe
+            # for "is the market trending/volatile right now" without
+            # reclassifying every 5 minutes off noisier M5 data.
+            if timeframe is Timeframe.H1:
+                _run_regime_classification(session, features_by_pair)
     finally:
         provider.close()
 
