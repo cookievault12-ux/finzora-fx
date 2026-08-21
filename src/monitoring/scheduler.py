@@ -29,6 +29,7 @@ from src.data.rate_limit import CircuitBreaker, TokenBucket
 from src.database.base import get_session_factory
 from src.database.models.system import SystemEvent
 from src.market.types import Timeframe
+from src.monitoring.retention import check_storage_budget, purge_stale_quality_events
 from src.providers.base import MarketDataProvider
 from src.providers.oanda import OandaProvider
 
@@ -107,6 +108,31 @@ def run_ingestion_cycle(timeframe: Timeframe) -> None:
         provider.close()
 
 
+def run_maintenance_cycle() -> None:
+    """Daily cost/quota guardrail: purge stale WARNING-level data-quality
+    noise and warn over Telegram before the Neon free-tier storage cap is
+    hit. See src/monitoring/retention.py for what is/isn't touched."""
+    session_factory = get_session_factory()
+    retention_days = int(os.environ.get("DATA_QUALITY_RETENTION_DAYS", "30"))
+    with session_factory() as session:
+        try:
+            deleted = purge_stale_quality_events(session, retention_days=retention_days)
+            report = check_storage_budget(session)
+            logger.info(
+                "Maintenance cycle: purged %d stale quality events; DB at %.1f%% of free-tier cap",
+                deleted, report["pct_used"] * 100,
+            )
+        except Exception:
+            logger.exception("Maintenance cycle failed")
+            session.rollback()
+            session.add(SystemEvent(
+                event_type="DATA_FAILURE", severity="ERROR", component="maintenance",
+                message="Daily retention/storage-budget cycle failed",
+                details={}, ts=dt.datetime.now(dt.timezone.utc),
+            ))
+            session.commit()
+
+
 def build_scheduler() -> BlockingScheduler:
     scheduler = BlockingScheduler(timezone="UTC")
     for timeframe, trigger in _SCHEDULE.items():
@@ -118,6 +144,13 @@ def build_scheduler() -> BlockingScheduler:
             max_instances=1,
             coalesce=True,
         )
+    scheduler.add_job(
+        run_maintenance_cycle,
+        trigger=CronTrigger(hour=23, minute=45),
+        id="maintenance_retention_and_storage_budget",
+        max_instances=1,
+        coalesce=True,
+    )
     return scheduler
 
 
