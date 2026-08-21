@@ -54,9 +54,17 @@ _SCHEDULE = {
 
 
 def _load_fx_pairs(config_path: str = "config/pairs.yaml") -> list[str]:
+    """Only the 8 major pairs (config/pairs.yaml fx_pairs.majors) are
+    actively ingested — these are the deepest-liquidity, most-traded pairs
+    (BIS survey majors) plus USD/SGD for local relevance. The 12 cross
+    pairs under fx_pairs.crosses are intentionally NOT ingested: tracking
+    all 20 was overloading storage/compute for pairs with thinner volume
+    and less consistent behavior than the majors. Their instrument rows and
+    any already-collected price_data stay in the DB (nothing was deleted),
+    they're just no longer polled going forward."""
     with open(config_path) as f:
         config = yaml.safe_load(f)
-    return config["fx_pairs"]["majors"] + config["fx_pairs"]["crosses"]
+    return config["fx_pairs"]["majors"]
 
 
 def _ingest_with_resilience(
