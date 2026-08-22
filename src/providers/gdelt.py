@@ -34,7 +34,7 @@ from dataclasses import dataclass
 
 import httpx
 
-_LAST_UPDATE_URL = "http://data.gdeltproject.org/gdeltv2/lastupdate.txt"
+_LAST_UPDATE_URL = "https://data.gdeltproject.org/gdeltv2/lastupdate.txt"
 
 # 0-indexed positions in GDELT 2.0's 61-column Events schema. Only the
 # columns this project actually uses are named; everything else in the row
@@ -128,7 +128,11 @@ class GdeltClient:
     name = "gdelt"
 
     def __init__(self):
-        self._client = httpx.Client(timeout=60.0)
+        # follow_redirects=True: GDELT's server 301-redirects http -> https
+        # (confirmed live — the first production run of this client failed
+        # on exactly that before this was added), and file URLs returned by
+        # lastupdate.txt could plausibly redirect too.
+        self._client = httpx.Client(timeout=60.0, follow_redirects=True)
 
     def close(self) -> None:
         self._client.close()
