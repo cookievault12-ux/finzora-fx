@@ -6,7 +6,11 @@ market_regimes is a single global row per cycle, not per-instrument.
 
 Every call writes a signals row — including NO_TRADE ones — since a NO_TRADE
 decision with its reasoning is itself part of the audit trail, not a
-no-op to skip logging.
+no-op to skip logging. The one exception: if the underlying H1 price bar
+hasn't advanced since the last cycle (e.g. a weekend market closure), the
+call is a genuine no-op — it returns the existing row's id without
+re-running scoring, the Claude confirm/veto call, or sending another
+Telegram alert, since none of those would reflect any new information.
 """
 
 from __future__ import annotations
@@ -22,7 +26,7 @@ from src.market.types import Timeframe
 from src.providers.oanda import OandaProvider
 from src.signals.gate import has_recent_data_failure
 from src.signals.scoring import composite_score, execution_score, geopolitical_score_for_pair, macro_score
-from src.signals.store import get_instrument_id, get_or_create_strategy, store_signal
+from src.signals.store import get_instrument_id, get_last_signal, get_or_create_strategy, store_signal
 from src.signals.telegram_notify import send_signal_alert
 from src.signals.trend_following import compute_trend_signal
 
@@ -82,6 +86,19 @@ def generate_signal_for_instrument(
         )
     close = bars[-1].close
     ts = bars[-1].ts
+
+    # No new closed H1 bar since the last cycle (e.g. weekend market
+    # closure, or a provider hiccup) — re-running the full pipeline would
+    # burn a paid Claude confirm/veto call and, since NO_TRADE now alerts
+    # too, send a duplicate Telegram message for data that hasn't changed.
+    # Skip entirely and return the existing row.
+    last = get_last_signal(session, instrument_symbol=instrument_symbol, strategy_id=strategy_id)
+    if last is not None and last[1] == ts:
+        logger.info(
+            "No new H1 bar for %s since last signal (ts=%s) — skipping regeneration.",
+            instrument_symbol, ts,
+        )
+        return last[0]
 
     trend = compute_trend_signal(close=close, features=features, regime_labels=regime_labels)
 

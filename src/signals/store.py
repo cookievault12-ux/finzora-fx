@@ -54,6 +54,22 @@ def get_instrument_id(session: Session, symbol: str) -> int:
     return instrument_id
 
 
+def get_last_signal(session: Session, *, instrument_symbol: str, strategy_id: int) -> tuple[int, dt.datetime] | None:
+    """Returns (id, ts) of the most recent signal for this instrument+strategy,
+    or None if there isn't one yet. Used to detect "no new price bar since
+    last cycle" (e.g. over a weekend market closure) so the engine can skip
+    re-running the full pipeline — including the paid Claude confirm/veto
+    call and a duplicate Telegram alert — for data that hasn't changed."""
+    instrument_id = get_instrument_id(session, instrument_symbol)
+    row = session.execute(
+        select(Signal.id, Signal.ts)
+        .where(Signal.instrument_id == instrument_id, Signal.strategy_id == strategy_id)
+        .order_by(Signal.ts.desc())
+        .limit(1)
+    ).first()
+    return (row.id, row.ts) if row is not None else None
+
+
 def store_signal(
     session: Session,
     *,
