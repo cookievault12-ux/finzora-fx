@@ -39,6 +39,17 @@ def root() -> RedirectResponse:
     return RedirectResponse(url="/dashboard")
 
 
+@app.get("/ping")
+def ping() -> dict:
+    """Deliberately unauthenticated, deliberately not /health: Railway's
+    own infrastructure health check polls this on every deploy to decide
+    whether the container is up, and it can't supply Basic Auth
+    credentials — pointing it at the (now login-gated) /health caused every
+    deploy to be misreported as failed even though the app was running
+    fine. This returns nothing but a liveness signal, no system data."""
+    return {"status": "ok"}
+
+
 def _check_database() -> dict:
     try:
         engine = get_engine()
