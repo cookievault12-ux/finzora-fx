@@ -1,5 +1,5 @@
 """Scheduled jobs for data ingestion + feature/regime computation (spec
-section 79, Phase 1 + Phase 2).
+section 79, Phase 1 + Phase 2 + Phase 3 macro).
 
 Pipeline per cycle, per spec section 16 (Provider -> Ingestion ->
 Validation -> Normalization -> Postgres -> Feature Store): ingest bars for
@@ -8,9 +8,14 @@ feature vector from whatever is now in price_data. On the H1 cycle only,
 also aggregate that cycle's features across the 8 major pairs into a
 market-wide regime classification (src/features/regime.py).
 
-Macro/news/geopolitical ingestion, signal generation, and paper execution
-are later phases per PHASE0_REPORT.md's roadmap and aren't implemented yet,
-so scheduling them now would be scheduling jobs that don't exist.
+Phase 3 macro data (FRED) runs on its own once-daily cadence, separate from
+the FX ingestion loops above — it's monthly/quarterly-granularity data, so
+polling it every 5 minutes would be pure waste. FMP economic calendar and
+GDELT news/geopolitical ingestion aren't wired in yet (FMP free-tier access
+to the calendar endpoint is still being confirmed; see
+/internal/fmp-calendar-test). Signal generation and paper execution are
+later phases per PHASE0_REPORT.md's roadmap and aren't implemented yet, so
+scheduling them now would be scheduling jobs that don't exist.
 """
 
 from __future__ import annotations
@@ -25,6 +30,7 @@ from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy.orm import Session
 
 from src.data.ingestion import ingest_instrument_timeframe
+from src.data.macro_ingestion import ingest_fred_macro_data
 from src.data.rate_limit import CircuitBreaker, TokenBucket
 from src.database.base import get_session_factory
 from src.database.models.system import SystemEvent
@@ -200,6 +206,37 @@ def run_maintenance_cycle() -> None:
             session.commit()
 
 
+def run_macro_ingestion_cycle() -> None:
+    """Daily pull of US macro series (CPI, unemployment, Fed funds rate,
+    real GDP, 2Y/5Y/10Y Treasury yields) from FRED. See
+    src/data/macro_ingestion.py for why USD-side data alone covers all 8
+    tracked pairs for now."""
+    session_factory = get_session_factory()
+    with session_factory() as session:
+        try:
+            result = ingest_fred_macro_data(session)
+            logger.info(
+                "Macro ingestion cycle: wrote %d observations, %d skipped (no data yet), failed series: %s",
+                result["written"], result["skipped_missing"], result["failed_series"],
+            )
+            if result["failed_series"]:
+                session.add(SystemEvent(
+                    event_type="DATA_FAILURE", severity="WARNING", component="macro_ingestion",
+                    message=f"FRED series failed this cycle: {result['failed_series']}",
+                    details=result, ts=dt.datetime.now(dt.timezone.utc),
+                ))
+                session.commit()
+        except Exception:
+            logger.exception("Macro ingestion cycle failed")
+            session.rollback()
+            session.add(SystemEvent(
+                event_type="DATA_FAILURE", severity="ERROR", component="macro_ingestion",
+                message="Daily FRED macro ingestion cycle failed",
+                details={}, ts=dt.datetime.now(dt.timezone.utc),
+            ))
+            session.commit()
+
+
 def build_scheduler() -> BlockingScheduler:
     scheduler = BlockingScheduler(timezone="UTC")
     for timeframe, trigger in _SCHEDULE.items():
@@ -215,6 +252,13 @@ def build_scheduler() -> BlockingScheduler:
         run_maintenance_cycle,
         trigger=CronTrigger(hour=23, minute=45),
         id="maintenance_retention_and_storage_budget",
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        run_macro_ingestion_cycle,
+        trigger=CronTrigger(hour=1, minute=0),  # once daily, off-peak relative to the hourly FX jobs
+        id="macro_ingestion_fred",
         max_instances=1,
         coalesce=True,
     )

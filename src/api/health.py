@@ -10,8 +10,10 @@ endpoint that lies about coverage is worse than one that admits gaps.
 
 from __future__ import annotations
 
+import datetime as dt
 import os
 
+import httpx
 from fastapi import FastAPI, HTTPException
 from sqlalchemy import text
 
@@ -128,3 +130,35 @@ def telegram_updates(token: str) -> dict:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     configured_chat_id = os.environ.get("TELEGRAM_CHAT_ID")
     return {"configured_TELEGRAM_CHAT_ID": configured_chat_id, "telegram_response": result}
+
+
+@app.get("/internal/fmp-calendar-test")
+def fmp_calendar_test(token: str) -> dict:
+    """One-off manual check: does the already-configured free-tier
+    FMP_API_KEY actually have access to the Economic Data Releases Calendar
+    endpoint, or is it paid-gated? Docs weren't conclusive either way (see
+    Phase 3 research), so this hits the real endpoint from Railway (which
+    has normal outbound network access, unlike the build sandbox) and
+    reports the raw status/body back. Same admin-token gate as the other
+    /internal endpoints."""
+    expected = os.environ.get("INTERNAL_ADMIN_TOKEN")
+    if not expected or token != expected:
+        raise HTTPException(status_code=403, detail="forbidden")
+    api_key = os.environ.get("FMP_API_KEY")
+    if not api_key:
+        return {"status": "not_configured"}
+    today = dt.date.today()
+    try:
+        resp = httpx.get(
+            "https://financialmodelingprep.com/stable/economic-calendar",
+            params={
+                "from": today.isoformat(),
+                "to": (today + dt.timedelta(days=7)).isoformat(),
+                "apikey": api_key,
+            },
+            timeout=15.0,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"request failed: {exc}") from exc
+    body_preview = resp.text[:1500]
+    return {"http_status": resp.status_code, "body_preview": body_preview}
