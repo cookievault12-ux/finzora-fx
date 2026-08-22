@@ -234,3 +234,14 @@ Already connected: Alpha Vantage, FMP, Neon, Railway, Exa. Still needed: OANDA (
 Scope: provider/broker abstraction interfaces, database schema + migrations, scheduled ingestion for FX daily/intraday + macro calendar, data-quality validation pipeline, `PaperBroker` skeleton, Telegram "hello world," `/health` endpoint. No signal generation, no LLM analysis, no trading logic yet — foundations only, with tests for data ingestion and the paper broker per spec section 96.
 
 **Awaiting owner review and approval before any implementation begins.**
+
+---
+
+## 21. Pre-Live-Trading Checklist (revisit before switching from paper to live)
+
+Added 22 Aug 2026, during Phase 3, per the owner's explicit request to be reminded of these before any live-signal decision — do not let either slide by default just because paper trading is working:
+
+1. **Dual-LLM setup (Nemotron or equivalent secondary model).** Currently deferred — Claude alone is doing any LLM-based scoring needed for Phase 3 ingestion, and no dual-LLM voting exists yet at the signal-generation layer. The owner's stated reasoning: a second, independent model should reduce single-model bias and catch errors a lone LLM might miss on live decisions specifically — this matters far less for paper-trading research/backtesting than it will right before real capital is on the line. When this comes up again, revisit whether OpenCode Zen's Nemotron 3 (free, but "trial use only" per its own terms), OpenRouter (small paid cost, no such restriction), or another provider is the right fit at that time — pricing/free-tier terms may have changed by then.
+2. **A second live market-data source (e.g. FMP, once budget allows, or another provider).** Currently OANDA is the sole live FX price feed — no cross-provider discrepancy check is possible yet (src/data/quality.py's `check_provider_discrepancy` exists in code but has no second provider to compare against in production). The owner wants this revisited before going live, not just at some vague "later" point.
+
+**Action for whoever (human or Claude) is planning the live-trading cutover: read this section first and raise both items explicitly before proceeding, even if not otherwise prompted.**

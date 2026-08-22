@@ -10,12 +10,14 @@ market-wide regime classification (src/features/regime.py).
 
 Phase 3 macro data (FRED) runs on its own once-daily cadence, separate from
 the FX ingestion loops above — it's monthly/quarterly-granularity data, so
-polling it every 5 minutes would be pure waste. FMP economic calendar and
-GDELT news/geopolitical ingestion aren't wired in yet (FMP free-tier access
-to the calendar endpoint is still being confirmed; see
-/internal/fmp-calendar-test). Signal generation and paper execution are
-later phases per PHASE0_REPORT.md's roadmap and aren't implemented yet, so
-scheduling them now would be scheduling jobs that don't exist.
+polling it every 5 minutes would be pure waste. GDELT geopolitical events
+run every 15 minutes, matching GDELT's own update cadence. FMP's economic
+calendar is confirmed paid-tier only (HTTP 402 via /internal/fmp-calendar-test)
+and is deliberately not used — see PHASE0_REPORT.md section 21 for what's
+still deferred (dual-LLM, a second live price feed) before any live-signal
+decision. Signal generation and paper execution are later phases per
+PHASE0_REPORT.md's roadmap and aren't implemented yet, so scheduling them
+now would be scheduling jobs that don't exist.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy.orm import Session
 
+from src.data.geopolitical_ingestion import ingest_gdelt_events
 from src.data.ingestion import ingest_instrument_timeframe
 from src.data.macro_ingestion import ingest_fred_macro_data
 from src.data.rate_limit import CircuitBreaker, TokenBucket
@@ -237,6 +240,29 @@ def run_macro_ingestion_cycle() -> None:
             session.commit()
 
 
+def run_geopolitical_ingestion_cycle() -> None:
+    """Pulls the latest GDELT events file (updated every 15 min) and stores
+    currency-relevant, sufficiently-sourced events. See
+    src/data/geopolitical_ingestion.py for the rule-based scoring."""
+    session_factory = get_session_factory()
+    with session_factory() as session:
+        try:
+            result = ingest_gdelt_events(session)
+            logger.info(
+                "GDELT ingestion cycle: fetched %d, wrote %d, skipped_old=%d, skipped_irrelevant=%d",
+                result["fetched"], result["written"], result["skipped_old"], result["skipped_irrelevant"],
+            )
+        except Exception:
+            logger.exception("GDELT ingestion cycle failed")
+            session.rollback()
+            session.add(SystemEvent(
+                event_type="DATA_FAILURE", severity="ERROR", component="geopolitical_ingestion",
+                message="GDELT ingestion cycle failed",
+                details={}, ts=dt.datetime.now(dt.timezone.utc),
+            ))
+            session.commit()
+
+
 def build_scheduler() -> BlockingScheduler:
     scheduler = BlockingScheduler(timezone="UTC")
     for timeframe, trigger in _SCHEDULE.items():
@@ -259,6 +285,13 @@ def build_scheduler() -> BlockingScheduler:
         run_macro_ingestion_cycle,
         trigger=CronTrigger(hour=1, minute=0),  # once daily, off-peak relative to the hourly FX jobs
         id="macro_ingestion_fred",
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        run_geopolitical_ingestion_cycle,
+        trigger=CronTrigger(minute="*/15"),  # matches GDELT's own 15-minute update cadence
+        id="geopolitical_ingestion_gdelt",
         max_instances=1,
         coalesce=True,
     )
