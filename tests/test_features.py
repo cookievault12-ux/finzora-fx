@@ -92,3 +92,34 @@ def test_rsi_bounded_between_0_and_100_on_noisy_series():
     assert 0.0 <= features["rsi_14"] <= 100.0
     assert 0.0 <= features["stoch_k_14"] <= 100.0
     assert features["atr_14"] > 0
+
+
+def test_incremental_250bar_window_matches_full_history():
+    """The scheduler (src/features/store.py get_recent_bars) only ever
+    fetches the last 250 bars, not the instrument's entire price_data
+    history, for performance reasons. This is the Phase 2 "incremental-value
+    testing" requirement: confirm that computing off a fixed rolling window
+    gives the same result as computing off the full history from bar 0 —
+    i.e. 250 bars is enough warmup that no indicator (including the
+    exponentially-smoothed ones — EMA/RSI/ADX/ATR — which in principle
+    depend on the entire series) meaningfully drifts from the "true" value.
+    Without this, incremental (cycle-by-cycle) feature computation could
+    silently diverge from a full recompute, which would break
+    reproducibility (spec section 63)."""
+    import random
+    random.seed(11)
+    prices = [1.1000]
+    for _ in range(500):
+        prices.append(max(0.5, prices[-1] + random.uniform(-0.0015, 0.0016)))
+    all_bars = make_bars(prices)
+
+    window_250 = compute_features(all_bars[-250:])
+    full_history = compute_features(all_bars)
+
+    for key, full_value in full_history.items():
+        windowed_value = window_250[key]
+        if full_value is None or isinstance(full_value, bool):
+            assert windowed_value == full_value, f"{key}: {windowed_value!r} != {full_value!r}"
+            continue
+        rel_diff = abs(windowed_value - full_value) / (abs(full_value) + 1e-12)
+        assert rel_diff < 0.01, f"{key} drifted {rel_diff:.4%} between 250-bar window and full history"

@@ -23,6 +23,7 @@ from src.providers.oanda import OandaProvider
 from src.signals.gate import has_recent_data_failure
 from src.signals.scoring import composite_score, execution_score, geopolitical_score_for_pair, macro_score
 from src.signals.store import get_instrument_id, get_or_create_strategy, store_signal
+from src.signals.telegram_notify import send_signal_alert
 from src.signals.trend_following import compute_trend_signal
 
 logger = logging.getLogger(__name__)
@@ -145,7 +146,7 @@ def generate_signal_for_instrument(
         else:
             reason = f"{trend.reason} Claude confirmed: {verdict.reasoning}"
 
-    return store_signal(
+    signal_id = store_signal(
         session, instrument_symbol=instrument_symbol, ts=ts, direction=trend.direction,
         entry_price=trend.entry_price, stop_loss=trend.stop_loss, take_profit_1=trend.take_profit_1,
         risk_reward=trend.risk_reward, technical_score=trend.technical_score, macro_score=macro_score_value,
@@ -154,3 +155,15 @@ def generate_signal_for_instrument(
         reason=reason, llm_analysis=llm_analysis, market_regime_id=market_regime_id, strategy_id=strategy_id,
         features_used=features,
     )
+
+    # Telegram alert — only for actionable (post-veto) decisions, never for
+    # NO_TRADE. Best-effort: any failure here is logged inside
+    # send_signal_alert and never propagates, since the signal is already
+    # safely committed to the DB by this point.
+    send_signal_alert(
+        instrument=instrument_symbol, final_decision=final_decision,
+        entry_price=trend.entry_price, stop_loss=trend.stop_loss, take_profit_1=trend.take_profit_1,
+        risk_reward=trend.risk_reward, composite_score=composite, reason=reason,
+    )
+
+    return signal_id
