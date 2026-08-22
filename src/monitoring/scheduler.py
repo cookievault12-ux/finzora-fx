@@ -1,12 +1,18 @@
-"""Scheduled jobs for data ingestion + feature/regime computation (spec
-section 79, Phase 1 + Phase 2 + Phase 3 macro).
+"""Scheduled jobs for data ingestion + feature/regime/signal computation
+(spec section 79, Phase 1 + Phase 2 + Phase 3 macro + Phase 4 signals).
 
 Pipeline per cycle, per spec section 16 (Provider -> Ingestion ->
 Validation -> Normalization -> Postgres -> Feature Store): ingest bars for
 an instrument/timeframe, then immediately compute and store its Phase 2
 feature vector from whatever is now in price_data. On the H1 cycle only,
 also aggregate that cycle's features across the 8 major pairs into a
-market-wide regime classification (src/features/regime.py).
+market-wide regime classification (src/features/regime.py), then generate
+one Phase 4 trend-following signal per instrument off that same regime
+(src/signals/engine.py) — writes a `signals` row (including NO_TRADE ones)
+for every major pair, every hour. This is signal GENERATION only — no
+paper trade is ever executed from these signals yet; that's a deliberately
+separate next phase, so signal quality can be reviewed on the dashboard
+first.
 
 Phase 3 macro data (FRED) runs on its own once-daily cadence, separate from
 the FX ingestion loops above — it's monthly/quarterly-granularity data, so
@@ -15,9 +21,7 @@ run every 15 minutes, matching GDELT's own update cadence. FMP's economic
 calendar is confirmed paid-tier only (HTTP 402 via /internal/fmp-calendar-test)
 and is deliberately not used — see PHASE0_REPORT.md section 21 for what's
 still deferred (dual-LLM, a second live price feed) before any live-signal
-decision. Signal generation and paper execution are later phases per
-PHASE0_REPORT.md's roadmap and aren't implemented yet, so scheduling them
-now would be scheduling jobs that don't exist.
+decision.
 """
 
 from __future__ import annotations
@@ -43,6 +47,7 @@ from src.market.types import Timeframe
 from src.monitoring.retention import check_storage_budget, purge_stale_quality_events
 from src.providers.base import MarketDataProvider
 from src.providers.oanda import OandaProvider
+from src.signals.engine import generate_signal_for_instrument
 
 logger = logging.getLogger(__name__)
 
@@ -139,18 +144,22 @@ def _featurize_with_resilience(session: Session, instrument: str, timeframe: Tim
         return None
 
 
-def _run_regime_classification(session: Session, features_by_pair: dict[str, dict]) -> None:
+def _run_regime_classification(session: Session, features_by_pair: dict[str, dict]) -> tuple[int | None, list[str], float | None]:
     """Aggregates this cycle's H1 features across the major pairs into a
     single market-wide regime classification (spec: market_regimes is not
     per-instrument). See src/features/regime.py for the (deliberately
-    simple, explainable) rule-based methodology."""
+    simple, explainable) rule-based methodology. Returns
+    (market_regime_id, labels, confidence) so the signal engine below can
+    attach signals to the exact regime row they were generated against —
+    (None, [], None) if classification was skipped or failed this cycle."""
     try:
         labels, confidence = classify_regime(features_by_pair)
         if not labels:
             logger.info("Regime classification skipped this cycle — not enough feature history yet")
-            return
-        store_market_regime(session, dt.datetime.now(dt.timezone.utc), labels, confidence)
+            return None, [], None
+        regime_id = store_market_regime(session, dt.datetime.now(dt.timezone.utc), labels, confidence)
         logger.info("Regime classified: %s (confidence=%s)", labels, confidence)
+        return regime_id, labels, confidence
     except Exception:
         logger.exception("Regime classification failed")
         session.rollback()
@@ -160,6 +169,34 @@ def _run_regime_classification(session: Session, features_by_pair: dict[str, dic
             ts=dt.datetime.now(dt.timezone.utc),
         ))
         session.commit()
+        return None, [], None
+
+
+def _run_signal_generation(
+    session: Session, provider: OandaProvider, features_by_pair: dict[str, dict],
+    regime_id: int | None, regime_labels: list[str], regime_confidence: float | None,
+) -> None:
+    """Phase 4: generates one signal per instrument that has a usable H1
+    feature vector this cycle. Each instrument is independently wrapped so
+    one bad signal (LLM error, missing data) never blocks the rest — same
+    resilience pattern as ingestion/features above."""
+    for instrument, features in features_by_pair.items():
+        try:
+            signal_id = generate_signal_for_instrument(
+                session, provider, instrument, features=features,
+                regime_labels=regime_labels, regime_confidence=regime_confidence,
+                market_regime_id=regime_id,
+            )
+            logger.info("Signal generated for %s: id=%s", instrument, signal_id)
+        except Exception:
+            logger.exception("Signal generation failed for %s", instrument)
+            session.rollback()
+            session.add(SystemEvent(
+                event_type="DATA_FAILURE", severity="ERROR", component="signals",
+                message=f"Signal generation failed for {instrument}",
+                details={"instrument": instrument}, ts=dt.datetime.now(dt.timezone.utc),
+            ))
+            session.commit()
 
 
 def run_ingestion_cycle(timeframe: Timeframe) -> None:
@@ -177,9 +214,12 @@ def run_ingestion_cycle(timeframe: Timeframe) -> None:
 
             # Regime is classified off H1 only — a stable enough timeframe
             # for "is the market trending/volatile right now" without
-            # reclassifying every 5 minutes off noisier M5 data.
+            # reclassifying every 5 minutes off noisier M5 data. Signal
+            # generation (Phase 4) runs right after, same cadence, since it
+            # needs that cycle's regime to check TRENDING/RANGING against.
             if timeframe is Timeframe.H1:
-                _run_regime_classification(session, features_by_pair)
+                regime_id, regime_labels, regime_confidence = _run_regime_classification(session, features_by_pair)
+                _run_signal_generation(session, provider, features_by_pair, regime_id, regime_labels, regime_confidence)
     finally:
         provider.close()
 

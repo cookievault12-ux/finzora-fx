@@ -142,6 +142,19 @@ def _render(rows: dict, user_email: str) -> str:
         for r in rows["geo"]
     ) or "<tr><td colspan='5' class='muted'>No geopolitical events yet</td></tr>"
 
+    def _direction_badge(direction: str) -> str:
+        cls = "ok" if direction == "LONG" else "err" if direction == "SHORT" else "unknown"
+        return f"<span class='badge {cls}'>{_e(direction)}</span>"
+
+    signal_rows_html = "".join(
+        f"<tr><td class='muted'>{_fmt_ago(r['ts'])}</td><td>{_e(r['symbol'])}</td>"
+        f"<td>{_direction_badge(r['direction'])}</td><td>{_direction_badge(r['final_decision'])}</td>"
+        f"<td>{_e(r['composite_score'])}</td>"
+        f"<td class='muted'>{_e(r['entry_price'])} / {_e(r['stop_loss'])} / {_e(r['take_profit_1'])}</td>"
+        f"<td>{_e(r['reason'])[:160]}</td></tr>"
+        for r in rows["signals"]
+    ) or "<tr><td colspan='7' class='muted'>No signals generated yet</td></tr>"
+
     _blocked_badge = "<span class='badge err'>blocked trade</span>"
     _logged_badge = "<span class='badge warn'>logged only</span>"
     quality_rows_html = "".join(
@@ -216,6 +229,12 @@ def _render(rows: dict, user_email: str) -> str:
   </section>
 
   <section>
+    <h2>Recent Signals (Phase 4 — trend-following, RESEARCH status)</h2>
+    <table><thead><tr><th>When</th><th>Pair</th><th>Direction</th><th>Final Decision</th><th>Composite</th><th>Entry / Stop / Target</th><th>Reason</th></tr></thead>
+    <tbody>{signal_rows_html}</tbody></table>
+  </section>
+
+  <section>
     <h2>Data Quality Events (last 24h)</h2>
     <table><thead><tr><th>Issue Type</th><th>Outcome</th><th>Count</th></tr></thead>
     <tbody>{quality_rows_html}</tbody></table>
@@ -279,6 +298,13 @@ def dashboard(user_email: str = Depends(require_login)) -> str:
             GROUP BY issue_type, resulted_in_no_trade ORDER BY cnt DESC
         """)).mappings().all()
 
+        signals = conn.execute(text("""
+            SELECT s.ts, i.symbol, s.direction, s.final_decision, s.composite_score,
+                   s.entry_price, s.stop_loss, s.take_profit_1, s.reason
+            FROM signals s JOIN instruments i ON i.id = s.instrument_id
+            ORDER BY s.ts DESC LIMIT 20
+        """)).mappings().all()
+
         errors = conn.execute(text("""
             SELECT event_type, component, COUNT(*) AS cnt, MAX(ts) AS latest
             FROM system_events WHERE ts > now() - interval '24 hours'
@@ -289,7 +315,7 @@ def dashboard(user_email: str = Depends(require_login)) -> str:
         {
             "totals": totals, "coverage": coverage, "regime": regime,
             "macro": macro, "yields": yields_, "geo": geo,
-            "quality": quality, "errors": errors,
+            "quality": quality, "errors": errors, "signals": signals,
         },
         user_email,
     )

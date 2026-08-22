@@ -99,12 +99,16 @@ def compute_and_store_features(
 
 def store_market_regime(
     session: Session, ts, labels: list[str], confidence: float | None, *, version: str = METHODOLOGY_VERSION
-) -> None:
-    """Inserts one market_regimes row. Unlike market_features, this table
-    has no unique constraint to upsert against (spec's DDL treats each
-    classification run as its own historical snapshot, not something later
-    runs overwrite) — so a fresh regime classification each cycle is simply
-    a new row, which is what the regime_labels JSONB audit trail is for."""
+) -> int:
+    """Inserts one market_regimes row and returns its id (used by the
+    Phase 4 signal engine to attach signals to the regime they were
+    generated against). Unlike market_features, this table has no unique
+    constraint to upsert against (spec's DDL treats each classification
+    run as its own historical snapshot, not something later runs
+    overwrite) — so a fresh regime classification each cycle is simply a
+    new row, which is what the regime_labels JSONB audit trail is for."""
     confidence_decimal = Decimal(str(round(confidence, 4))) if confidence is not None else None
-    session.add(MarketRegime(ts=ts, regime_labels=labels, confidence=confidence_decimal, methodology_version=version))
+    regime = MarketRegime(ts=ts, regime_labels=labels, confidence=confidence_decimal, methodology_version=version)
+    session.add(regime)
     session.commit()
+    return regime.id
