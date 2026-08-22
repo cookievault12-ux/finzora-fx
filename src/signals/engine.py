@@ -156,10 +156,12 @@ def generate_signal_for_instrument(
         features_used=features,
     )
 
-    # Telegram alert — only for actionable (post-veto) decisions, never for
-    # NO_TRADE. Best-effort: any failure here is logged inside
-    # send_signal_alert and never propagates, since the signal is already
-    # safely committed to the DB by this point.
+    # Telegram alert for every decision, including NO_TRADE (per owner
+    # request, 22 Aug 2026) — NO_TRADE gets a short one-liner with the
+    # reason, LONG/SHORT get the full detailed card. Best-effort: any
+    # failure here is logged inside send_signal_alert and never
+    # propagates, since the signal is already safely committed to the DB
+    # by this point.
     send_signal_alert(
         instrument=instrument_symbol, final_decision=final_decision,
         entry_price=trend.entry_price, stop_loss=trend.stop_loss, take_profit_1=trend.take_profit_1,

@@ -1,10 +1,13 @@
-"""Telegram alerts for actionable signals (Phase 4).
+"""Telegram alerts for every generated signal (Phase 4).
 
-Only fires when final_decision is LONG or SHORT — NO_TRADE is the vast
-majority of hourly cycles (8 pairs x every hour) and alerting on every one
-of those would just be noise the owner would tune out. NO_TRADE decisions
-are still fully recorded in `signals` and visible on the dashboard; they
-just don't page anyone.
+Updated 22 Aug 2026 per owner request: originally this only fired for
+LONG/SHORT (actionable) signals, to avoid ~8 msgs/hour of NO_TRADE noise.
+The owner explicitly decided they'd rather see NO_TRADE too, with the
+reason attached, so they can watch the system reason in near-real-time
+rather than only checking the dashboard. To keep that from being pure
+noise, NO_TRADE gets a short one-line message (pair + reason) while an
+actionable LONG/SHORT keeps the full detailed card (entry/stop/target/
+scores) — so the inbox stays scannable even at 8 messages/cycle.
 
 A Telegram failure (network blip, bad token) must never break signal
 storage — the signal is already committed to the DB by the time this is
@@ -20,6 +23,8 @@ import logging
 from src.telegram.client import TelegramClient
 
 logger = logging.getLogger(__name__)
+
+_DECISION_EMOJI = {"LONG": "🟢", "SHORT": "🔴", "NO_TRADE": "⚪"}
 
 
 def _fmt(value) -> str:
@@ -37,7 +42,15 @@ def format_signal_alert(
     composite_score,
     reason: str,
 ) -> str:
-    emoji = "🟢" if final_decision == "LONG" else "🔴"
+    emoji = _DECISION_EMOJI.get(final_decision, "⚪")
+
+    if final_decision == "NO_TRADE":
+        # Short one-liner — this fires far more often than LONG/SHORT
+        # (most cycles are NO_TRADE across most pairs), so it stays
+        # scannable rather than repeating the full card's mostly-empty
+        # entry/stop/target fields.
+        return f"{emoji} <b>{_fmt(instrument)} — NO_TRADE</b>\n{_fmt(reason)}"
+
     return (
         f"{emoji} <b>FINZORA FX — {_fmt(final_decision)} {_fmt(instrument)}</b>\n\n"
         f"Entry: {_fmt(entry_price)}\n"
@@ -62,8 +75,6 @@ def send_signal_alert(
     composite_score,
     reason: str,
 ) -> None:
-    if final_decision not in ("LONG", "SHORT"):
-        return  # NO_TRADE is recorded in the DB but doesn't page anyone
     try:
         text = format_signal_alert(
             instrument=instrument, final_decision=final_decision, entry_price=entry_price,

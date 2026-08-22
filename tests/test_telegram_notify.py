@@ -1,8 +1,9 @@
-"""Tests for src/signals/telegram_notify.py — pure formatting logic plus
-the actionable-only gating rule (NO_TRADE never sends). The actual HTTP
-call to Telegram isn't exercised here (no network in the build sandbox);
-send_signal_alert()'s early-return for NO_TRADE and its try/except safety
-wrapper are reviewed by inspection. Run for real with:
+"""Tests for src/signals/telegram_notify.py — pure formatting logic.
+Every final_decision now sends (owner request, 22 Aug 2026): NO_TRADE
+gets a short one-line message, LONG/SHORT get the full detailed card.
+The actual HTTP call to Telegram isn't exercised here (no network in the
+build sandbox); send_signal_alert()'s try/except safety wrapper is
+reviewed by inspection. Run for real with:
 pip install -e ".[dev]" && pytest tests/test_telegram_notify.py -v
 """
 
@@ -54,3 +55,30 @@ def test_none_fields_render_as_em_dash_not_python_none():
     )
     assert "None" not in text
     assert "—" in text
+
+
+def test_no_trade_message_is_short_one_liner_with_reason():
+    text = format_signal_alert(
+        instrument="GBP/USD", final_decision="NO_TRADE", entry_price=None,
+        stop_loss=None, take_profit_1=None, risk_reward=None,
+        composite_score=37.3, reason="ADX 21.9 below trend threshold 25.0.",
+    )
+    assert "⚪" in text
+    assert "NO_TRADE" in text
+    assert "GBP/USD" in text
+    assert "ADX 21.9 below trend threshold 25.0." in text
+    # NO_TRADE fires far more often than LONG/SHORT — it must stay a
+    # one-liner, not repeat the full card's mostly-empty fields.
+    assert "Entry:" not in text
+    assert "RESEARCH" not in text
+
+
+def test_no_trade_reason_is_html_escaped_too():
+    text = format_signal_alert(
+        instrument="USD/CHF", final_decision="NO_TRADE", entry_price=None,
+        stop_loss=None, take_profit_1=None, risk_reward=None,
+        composite_score=None, reason="A & B <disagree>",
+    )
+    assert "&amp;" in text
+    assert "&lt;disagree&gt;" in text
+    assert "<disagree>" not in text
